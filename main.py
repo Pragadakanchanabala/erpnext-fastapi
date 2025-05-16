@@ -1,16 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from models.issue import IssueEntry
 from database import issues_collection
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List
-import httpx, os
+from typing import List, Optional
+import httpx
+import os
 from dotenv import load_dotenv
 from bson import ObjectId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import logging
 from httpx import RequestError
+
 # Load environment variables
 load_dotenv()
 
@@ -35,13 +37,10 @@ def serialize_for_erp(data: dict) -> dict:
             data[key] = value.isoformat()
     return data
 
-# 🔁 Shared sync function
-# 🔁 Shared sync function with detailed logging
+# 🔁 Sync pending issues
 async def sync_pending_issues_task():
     synced_count = 0
     unsynced_cursor = issues_collection.find({"synced": False})
-
-    # Log number of pending issues
     pending_issues = await unsynced_cursor.to_list(length=None)
     logger.info(f"Found {len(pending_issues)} pending issues.")
 
@@ -52,7 +51,7 @@ async def sync_pending_issues_task():
         issue_data = {
             "subject": issue["subject"],
             "raised_by": issue["raised_by"],
-            "status": issue["status"].capitalize()  # ensure "Open" not "open"
+            "status": issue["status"].capitalize()
         }
 
         try:
@@ -81,19 +80,16 @@ async def sync_pending_issues_task():
 
     return synced_count
 
-
-# 🔃 Run on startup
+# Run on startup
 @app.on_event("startup")
 async def startup_event():
     await issues_collection.create_index("created_at")
     await issues_collection.create_index("synced")
-
-    # Schedule background sync every 5 minutes
     scheduler.add_job(sync_pending_issues_task, IntervalTrigger(minutes=5))
     scheduler.start()
     logger.info("🔁 Background sync scheduler started.")
 
-# 📥 Submit Issue
+# Submit Issue
 @app.post("/submit-issue")
 async def submit_issue(issue: IssueEntry):
     issue_data = issue.dict()
@@ -101,11 +97,9 @@ async def submit_issue(issue: IssueEntry):
 
     try:
         serialized_data = serialize_for_erp(issue_data)
-
         async with httpx.AsyncClient() as client:
             response = await client.post(ERP_API_URL, cookies=COOKIES, json={"data": serialized_data})
             response.raise_for_status()
-        
         issue_data["synced"] = True
         issue_data["synced_at"] = datetime.utcnow()
 
@@ -122,7 +116,7 @@ async def submit_issue(issue: IssueEntry):
     await issues_collection.insert_one(issue_data)
     return {"status": "stored", "synced": issue_data["synced"]}
 
-# 🧾 Get unsynced issues
+# Get unsynced issues
 @app.get("/unsynced-issues")
 async def get_unsynced():
     issues = await issues_collection.find({"synced": False}).to_list(100)
@@ -130,37 +124,21 @@ async def get_unsynced():
         issue["_id"] = str(issue["_id"])
     return issues
 
-# 🔄 Manual Sync Trigger
+# Manual Sync Trigger
 @app.post("/sync-pending")
 async def sync_pending():
     synced = await sync_pending_issues_task()
     return {"status": f"Manual sync attempt completed. Synced {synced} issues."}
-# ✅ Get synced issues
+
+# Get synced issues
 @app.get("/synced-issues")
 async def get_synced_issues():
     issues = await issues_collection.find({"synced": True}).to_list(100)
     for issue in issues:
-        issue["_id"] = str(issue["_id"])  # Convert ObjectId to string
+        issue["_id"] = str(issue["_id"])
     return issues
 
-=======
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List
-from database import issues_collection
-import httpx
-import os
-from dotenv import load_dotenv
-
-app = FastAPI()
-load_dotenv()
-
-ERP_API_URL = "https://erp.kisanmitra.net/api/resource/Issue"
-COOKIES = {
-    "sid": os.getenv("ERP_SID")
-}
-
-# Fetch and Insert Endpoint
+# Fetch all issues from ERP and insert/update in MongoDB
 @app.get("/fetch-all")
 async def fetch_all_and_insert():
     batch_size = 500
@@ -207,25 +185,19 @@ async def fetch_all_and_insert():
         "failed_batches": failed_batches
     }
 
+# Delete all issues
 @app.delete("/delete-issues")
 async def delete_issues():
     result = await issues_collection.delete_many({})
     return {"deleted_count": result.deleted_count}
 
-
-# ----------------------- CRUD Operations -----------------------
-
+# Minimal Issue Model for ERP data
 class Issue(BaseModel):
     name: str
     subject: str
     raised_by: Optional[str] = None
-    #status: Optional[str] = None
-    #km_state_case: Optional[str] = None
-    #km_district_case: Optional[str] = None
-    #km_mandal_case: Optional[str] = None
-    #km_village_case: Optional[str] = None
-    #raised_by_phone: Optional[str] = None
 
+# CRUD APIs
 @app.get("/issues", response_model=List[Issue])
 async def get_all_issues():
     issues = await issues_collection.find().to_list(length=100)
@@ -256,5 +228,3 @@ async def delete_issue(name: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Issue not found")
     return {"message": f"Issue '{name}' deleted successfully"}
-
-

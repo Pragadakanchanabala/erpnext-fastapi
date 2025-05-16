@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from fastapi import FastAPI
 from models.issue import IssueEntry
 from database import issues_collection
@@ -257,5 +256,5 @@ async def delete_issue(name: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Issue not found")
     return {"message": f"Issue '{name}' deleted successfully"}
->>>>>>> efdb084018bed60b255789dd4ab79a365e276a72
+
 

@@ -28,3 +28,4 @@ class Settings(BaseSettings):
     GITHUB_PAT: Optional[str] = None
 
 settings = Settings()
+

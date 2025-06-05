@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # ERPNext Settings
     ERP_API_URL: str = "https://erp.kisanmitra.net/api/resource/Issue" # Default, can be overridden
-    ERP_SID: str
+    ERP_SID: str # Using SID for ERPNext authentication as requested
 
     # Google Auth Settings
     GOOGLE_CLIENT_ID: str
@@ -28,4 +28,3 @@ class Settings(BaseSettings):
     GITHUB_PAT: Optional[str] = None
 
 settings = Settings()
-

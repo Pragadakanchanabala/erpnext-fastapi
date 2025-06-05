@@ -7,15 +7,16 @@ from typing import Optional
 # Global client and database instances
 client: Optional[AsyncIOMotorClient] = None
 db: Optional[AsyncIOMotorDatabase] = None
-# REMOVE THIS LINE: issues_collection = None # No longer needed as a separate global variable
 
 async def connect_to_mongo():
     """
     Establishes an asynchronous connection to MongoDB using Motor.
     """
-    global client, db # Removed issues_collection from global here
+    global client, db
     try:
+        # Use MONGO_DB_URL from settings
         client = AsyncIOMotorClient(settings.MONGO_DB_URL)
+        # Use MONGO_DB_NAME from settings
         db = client[settings.MONGO_DB_NAME]
         # The ping command is cheap and does not require auth, useful for connection test
         await client.admin.command('ping')
@@ -24,7 +25,6 @@ async def connect_to_mongo():
         print(f"MongoDB connection failed: {e}")
         client = None
         db = None
-        # REMOVE THIS LINE: issues_collection = None # No longer needed here
         raise # Re-raise the exception to indicate connection failure
 
 async def close_mongo_connection():

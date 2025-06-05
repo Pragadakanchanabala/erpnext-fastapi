@@ -1,4 +1,11 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Environment variables
 .env
-.env
+.env.*
+test_erp_connection.py

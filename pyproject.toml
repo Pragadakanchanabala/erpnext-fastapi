@@ -3,22 +3,45 @@ name = "erpnext-fastapi"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "Your Name", email = "you@example.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "motor (>=3.7.0,<4.0.0)",
-    "uvicorn[standard] (>=0.34.0,<0.35.0)",
-    "fastapi (>=0.115.12,<0.116.0)",
-    "httpx (>=0.28.1,<0.29.0)",
-    "requests (>=2.32.3,<3.0.0)",
-    "python-dotenv (>=1.1.0,<2.0.0)",
-    "pydantic (>=2.11.3,<3.0.0)",
-    "sqlalchemy (>=2.0.40,<3.0.0)"
-]
 
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+
+# FastAPI and ASGI server
+fastapi = "0.115.12"
+uvicorn = {extras = ["standard"], version = "0.34.0"}
+
+# HTTP Client for ERPNext communication
+httpx = "0.28.1"
+
+# Asynchronous MongoDB driver
+# pymongo = "4.3.0" # Removed this explicit pin to allow compatible version with motor 3.5.0
+
+# Environment variable management
+python-dotenv = "1.1.0"
+
+# Pydantic for data validation and settings management
+pydantic = {extras = ["email"], version = "^2.11.5"}
+pydantic-settings = "2.3.4"
+
+# Google Authentication and JWT handling
+google-auth = "2.31.0"
+google-auth-httplib2 = "0.2.0"
+google-auth-oauthlib = "1.2.0"
+python-jose = {extras = ["cryptography"], version = "3.3.0"}
+
+# Background task scheduler
+apscheduler = "3.10.4"
+motor = "3.5.0"
+pymongo = "4.5.0"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

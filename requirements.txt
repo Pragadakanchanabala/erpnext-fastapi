@@ -1,6 +1,19 @@
-fastapi==0.115.12
+"""fastapi==0.115.12
 uvicorn==0.34.0
 httpx==0.28.1
 motor==3.4.0
 pymongo==4.12.0
 python-dotenv==1.1.0
+"""
+fastapi==0.115.12
+uvicorn==0.34.0
+httpx==0.28.1
+motor==3.4.0 # For asynchronous MongoDB
+pymongo==4.12.0 # Motor depends on pymongo
+python-dotenv==1.1.0
+pydantic-settings==2.3.4 # For robust settings management
+python-jose[cryptography]==3.3.0 # For JWT handling
+google-auth==2.31.0 # For Google ID token verification
+google-auth-httplib2==0.2.0 # Dependency for google-auth
+google-auth-oauthlib==1.2.0 # Dependency for google-auth
+apscheduler==3.10.4 # For background tasks

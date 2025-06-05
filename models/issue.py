@@ -5,8 +5,7 @@ from typing import Optional
 class IssueEntry(BaseModel):
     subject: str
     raised_by: str
-    status: str
+    status: Optional[str] = None  # <--- THIS IS THE CRUCIAL CHANGE: Made status optional
     created_at: Optional[datetime] = None
     synced: bool = False
-    synced_at: Optional[datetime] = None  # Make synced_at optional
-
+    synced_at: Optional[datetime] = None

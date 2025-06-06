@@ -8,7 +8,7 @@ from config import settings
 from database import connect_to_mongo, close_mongo_connection, get_database, get_issues_collection
 
 # Import routers
-from routes import auth, issues # Import the routers from the new files
+from routes import auth, issues, erp_metadata # Added erp_metadata router
 from services.sync_service import sync_pending_issues_task # Corrected import path for the task
 
 # FastAPI app
@@ -24,6 +24,7 @@ scheduler = AsyncIOScheduler()
 # Include routers
 app.include_router(auth.router)
 app.include_router(issues.router) # Issues routes will be under /issues by default due to prefix in router
+app.include_router(erp_metadata.router) # New router for ERP metadata
 
 # Startup event: Connect to MongoDB, ensure indexes, start scheduler
 @app.on_event("startup")

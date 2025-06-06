@@ -1,7 +1,7 @@
 import httpx
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from config import settings
 from fastapi import HTTPException, status # Used for raising specific HTTP exceptions
@@ -85,13 +85,13 @@ async def delete_issue_in_erp(erp_issue_name: str) -> bool:
             logger.error(f"❌ Failed to delete issue {erp_issue_name} in ERP: {e}")
     return False
 
-async def fetch_issues_from_erp(start: int, batch_size: int) -> Dict[str, Any]:
+async def fetch_issues_from_erp(start: int, batch_size: int) -> List[Dict[str, Any]]:
     """
     Fetches a batch of issues from ERPNext.
     Returns response data or raises errors.
     """
     if not settings.ERP_API_URL or not settings.ERP_SID:
-        logger.error("ERPNext API URL or SID is not configured for fetching.")
+        logger.error("ERPNext API URL or SID is not configured for fetching issues.")
         raise HTTPException(status_code=500, detail="ERPNext API not configured.")
 
     url = (
@@ -104,3 +104,96 @@ async def fetch_issues_from_erp(start: int, batch_size: int) -> Dict[str, Any]:
         response = await client.get(url, cookies={"sid": settings.ERP_SID})
         response.raise_for_status() # Raise HTTPStatusError for bad responses
         return response.json().get("data", [])
+
+async def get_doctype_count() -> int:
+    """Fetches the total count of DocTypes from ERPNext."""
+    if not settings.ERP_API_URL or not settings.ERP_SID:
+        logger.error("ERPNext API URL or SID is not configured for fetching DocType count.")
+        raise HTTPException(status_code=500, detail="ERPNext API not configured.")
+
+    # ERPNext often exposes /api/method/frappe.client.get_count for DocType counts
+    count_url = settings.ERP_API_URL.replace("/api/resource/Issue", "/api/method/frappe.client.get_count")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{count_url}?doctype=DocType",
+                cookies={"sid": settings.ERP_SID}
+            )
+            response.raise_for_status()
+            count = response.json().get("message", 0) # get_count usually returns count in 'message'
+            logger.info(f"Fetched DocType count: {count}")
+            return count
+    except httpx.RequestError as e:
+        logger.error(f"🌐 Network error fetching DocType count: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"ERPNext unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching DocType count: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except Exception as e:
+        logger.error(f"Unexpected error fetching DocType count: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")
+
+async def get_doctype_list_from_erp(limit_start: int = 0, limit_page_length: int = 100) -> List[Dict[str, Any]]:
+    """Fetches a list of DocTypes (names only) from ERPNext."""
+    if not settings.ERP_API_URL or not settings.ERP_SID:
+        logger.error("ERPNext API URL or SID is not configured for fetching DocType list.")
+        raise HTTPException(status_code=500, detail="ERPNext API not configured.")
+
+    # ERPNext often exposes /api/method/frappe.client.get_list for DocType lists
+    list_url = settings.ERP_API_URL.replace("/api/resource/Issue", "/api/method/frappe.client.get_list")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{list_url}?doctype=DocType&fields=[\"name\"]&limit_start={limit_start}&limit_page_length={limit_page_length}",
+                cookies={"sid": settings.ERP_SID}
+            )
+            response.raise_for_status()
+            data = response.json().get("message", []) # get_list usually returns data in 'message'
+            logger.info(f"Fetched DocType list (batch {limit_start}-{limit_start+limit_page_length}): {len(data)} items")
+            return data
+    except httpx.RequestError as e:
+        logger.error(f"🌐 Network error fetching DocType list: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"ERPNext unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching DocType list: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except Exception as e:
+        logger.error(f"Unexpected error fetching DocType list: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")
+
+
+async def get_doctype_schema_from_erp(doctype_name: str) -> Dict[str, Any]:
+    """Fetches the full DocType schema (definition) for a given DocType name."""
+    if not settings.ERP_API_URL or not settings.ERP_SID:
+        logger.error("ERPNext API URL or SID is not configured for fetching DocType schema.")
+        raise HTTPException(status_code=500, detail="ERPNext API not configured.")
+
+    # To get full DocType schema, you typically fetch the DocType itself as a resource
+    # The URL pattern for getting a DocType's definition is /api/resource/DocType/{doctype_name}
+    schema_url = settings.ERP_API_URL.replace("/api/resource/Issue", f"/api/resource/DocType/{doctype_name}")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                schema_url,
+                cookies={"sid": settings.ERP_SID}
+            )
+            response.raise_for_status()
+            data = response.json().get("data") # Direct resource get returns data in 'data'
+            if not data:
+                logger.warning(f"No data found for DocType schema: {doctype_name}")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"DocType '{doctype_name}' not found or no data available.")
+            logger.info(f"Fetched schema for DocType: {doctype_name}")
+            return data
+    except httpx.RequestError as e:
+        logger.error(f"🌐 Network error fetching DocType schema for {doctype_name}: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"ERPNext unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching DocType schema for {doctype_name}: {e.response.status_code} - {e.response.text}")
+        # Re-raise the specific HTTP error received from ERPNext
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except Exception as e:
+        logger.error(f"Unexpected error fetching DocType schema for {doctype_name}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal error: {e}")

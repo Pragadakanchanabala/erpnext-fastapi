@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str
 
     # ERPNext Settings
-    ERP_API_URL: str = "https://erp.kisanmitra.net/api/resource/Issue" # Default, can be overridden
+    ERP_API_URL: str = "https://erp.kisanmitra.net/api"  # base API URL (not just /Issue) # Default, can be overridden
     ERP_SID: str # Using SID for ERPNext authentication as requested
 
     # Google Auth Settings

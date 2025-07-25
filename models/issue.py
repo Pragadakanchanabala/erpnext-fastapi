@@ -1,3 +1,5 @@
+# File: models/issue.py
+
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
@@ -8,7 +10,7 @@ class IssueCreate(BaseModel):
     Contains only the fields a user should provide.
     """
     subject: str
-    raised_by: str
+    raised_by: Optional[str] = None # <-- This is the required change
     status: str = "Open"
 
 class IssueEntry(IssueCreate):
@@ -25,9 +27,6 @@ class IssueEntry(IssueCreate):
     class Config:
         """
         Pydantic model configuration.
-        - `populate_by_name`: Allows creating the model using either field name or alias (e.g., 'id' or '_id').
-        - `arbitrary_types_allowed`: Allows handling types like MongoDB's ObjectId.
-        - `json_encoders`: Ensures datetime objects are converted to ISO 8601 string format in JSON.
         """
         populate_by_name = True
         arbitrary_types_allowed = True

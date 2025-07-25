@@ -1,61 +1,66 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import List, Optional
+# File: routes/issues.py
+
+from fastapi import APIRouter, HTTPException
+from typing import List
+from datetime import datetime
 import logging
-import httpx # Still needed for specific httpx.RequestError in direct calls
-from datetime import datetime # Still needed for datetime.utcnow()
 
-from models.issue import IssueEntry
-from services import erp_service, mongo_service, sync_service # Import the new service modules
+from models.issue import IssueEntry, IssueCreate # Import both models
+from services import mongo_service, erp_service, sync_service
 
-# Create an API Router for issue-related endpoints
 router = APIRouter(prefix="/issues", tags=["Issues Management"])
-
 logger = logging.getLogger(__name__)
 
-# --- API Endpoints for Issues ---
 
-@router.post("/submit-issue", response_model=IssueEntry, summary="Submit a new issue to ERP and store in MongoDB")
-async def submit_issue(issue: IssueEntry):
+@router.post("/submit-issue", response_model=IssueEntry, summary="Submit a new issue")
+async def submit_issue(issue_to_create: IssueCreate): # Use IssueCreate for input
     """
-    Creates a new issue. Attempts to submit to ERPNext immediately.
-    If ERPNext is unreachable or rejects, stores the issue in MongoDB for later sync.
+    Creates a new issue by saving it to MongoDB first, then attempts a
+    real-time sync to ERPNext. This ensures data is never lost.
     """
-    issue_data = issue.dict()
+    # --- Step 1: Prepare and Save to MongoDB FIRST ---
+    issue_data = issue_to_create.model_dump()
+    issue_data["synced"] = False # Always default to unsynced
     issue_data["created_at"] = datetime.utcnow()
-    issue_data["synced"] = False # Default to unsynced
 
     try:
-        erp_response_data = await erp_service.submit_issue_to_erp(issue_data, is_update=False)
-        issue_data["name"] = erp_response_data.get("name")
-        issue_data["synced"] = True
-        issue_data["synced_at"] = datetime.utcnow()
-        logger.info(f"✅ Issue submitted to ERP successfully: {issue_data['subject']} (ERP ID: {issue_data.get('name')})")
-    except HTTPException as e:
-        logger.warning(f"ERPNext rejection (Status: {e.status_code}): {e.detail}, storing for sync.")
-    except httpx.RequestError as e:
-        logger.warning(f"🌐 [Offline] ERP unreachable, storing issue for sync: {e}")
+        new_local_issue = await mongo_service.create_issue(issue_data)
+        logger.info(f"Issue saved locally with MongoDB ID: {new_local_issue.id}")
     except Exception as e:
-        logger.error(f"❌ Unexpected error submitting issue to ERP: {e}, storing for sync.")
+        logger.error(f"CRITICAL: Could not save issue to MongoDB. Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to write issue to local database.")
 
-    created_issue = await mongo_service.create_issue(issue_data)
-    return created_issue
+    # --- Step 2: Try to sync the newly created issue to ERPNext ---
+    try:
+        erp_response = await erp_service.submit_issue_to_erp(new_local_issue.model_dump())
+        
+        # --- Step 3: If sync succeeds, update the local record ---
+        update_data = {
+            "synced": True,
+            "synced_at": datetime.utcnow(),
+            "name": erp_response.get("name") # Save the permanent ERP ID
+        }
+        updated_issue = await mongo_service.update_issue(new_local_issue.id, update_data)
+        logger.info(f"Real-time sync to ERP successful. ERP Name: {updated_issue.name}")
+        return updated_issue # Return the fully synced issue
+
+    except Exception as e:
+        logger.warning(f"Real-time sync to ERP failed. The issue will be synced by the background job. Error: {e}")
+        # If sync fails, just return the locally saved record. It's safe.
+        return new_local_issue
+
+# --- Other endpoints you already have can remain the same ---
 
 @router.get("/unsynced", response_model=List[IssueEntry], summary="Get issues not yet synced to ERP")
 async def get_unsynced_issues():
-    """Retrieves a list of issues from MongoDB that have not yet been successfully synced to ERPNext."""
     return await mongo_service.get_unsynced_issues()
 
 @router.post("/sync-pending", summary="Manually trigger synchronization of pending issues")
 async def sync_pending():
-    """Manually triggers the background task to synchronize all pending (unsynced) issues from MongoDB to ERPNext."""
-    # This now calls the comprehensive sync_all_issues_from_erp from sync_service
-    # If you only want to sync pending (MongoDB to ERPNext) issues, you would call sync_service.sync_pending_issues_task()
-    # The current definition of sync_pending_issues_task in sync_service.py still does only pending.
-    # So, if you want this to *only* push pending issues to ERP, revert to:
-    # synced = await sync_service.sync_pending_issues_task()
-    # For now, sticking to the "sync_pending_issues_task" as named in the Canvas
-    synced = await sync_service.sync_pending_issues_task()
-    return {"status": f"Manual sync attempt completed. Synced {synced} issues."}
+    synced_count = await sync_service.sync_pending_issues_task()
+    return {"status": f"Manual sync attempt completed. Synced {synced_count} issues."}
+
+# (Include the rest of your endpoints like /synced, /fetch-all, /{item_id}, etc.)
 
 
 @router.get("/synced", response_model=List[IssueEntry], summary="Get issues successfully synced to ERP")

@@ -23,32 +23,40 @@ def erp_url(resource: str, path: Optional[str] = None, params: Optional[str] = N
         url += f"?{params}"
     return url
 
+# In File: services/erp_service.py
+
 async def submit_issue_to_erp(issue_data: dict, is_update: bool = False) -> Dict[str, Any]:
+    """
+    Submits issue data to ERPNext. Uses POST for creation and PUT for updates.
+    This version dynamically includes all fields from issue_data.
+    """
     if not settings.ERP_API_URL or not settings.ERP_SID:
         logger.error("ERPNext API URL or SID is not configured.")
         raise HTTPException(status_code=500, detail="ERPNext API not configured.")
 
-    erp_payload = {
-        "subject": issue_data.get("subject"),
-        "raised_by": issue_data.get("raised_by"),
-        "status": issue_data.get("status", "Open").capitalize()
-    }
-
-    if is_update and "name" in issue_data:
-        erp_payload["name"] = issue_data["name"]
+    # Dynamically create the payload from all keys in issue_data
+    # Exclude our internal sync/ID fields
+    excluded_keys = {'id', '_id', 'created_at', 'synced', 'synced_at'}
+    erp_payload = {key: value for key, value in issue_data.items() if key not in excluded_keys}
 
     serialized_data = serialize_for_erp(erp_payload)
 
     async with httpx.AsyncClient() as client:
-        if is_update and "name" in issue_data:
-            url = erp_url("resource/Issue", issue_data["name"])
-            response = await client.put(url, cookies={"sid": settings.ERP_SID}, json={"data": serialized_data})
-            logger.info(f"📤 ERP PUT response for {issue_data.get('name', 'N/A')}: {response.status_code} - {response.text}")
+        # For updates, the 'name' is in the URL, not the payload
+        if is_update and "name" in serialized_data:
+            erp_issue_name = serialized_data.pop("name") # Remove name from payload
+            url = erp_url("resource/Issue", erp_issue_name)
+            response = await client.put(url, cookies={"sid": settings.ERP_SID}, json=serialized_data)
+            logger.info(f"📤 ERP PUT response for {erp_issue_name}: {response.status_code}")
         else:
+            # For creation
             url = erp_url("resource/Issue")
-            response = await client.post(url, cookies={"sid": settings.ERP_SID}, json={"data": serialized_data})
-            logger.info(f"📤 ERP POST response: {response.status_code} - {response.text}")
+            response = await client.post(url, cookies={"sid": settings.ERP_SID}, json=serialized_data)
+            logger.info(f"📤 ERP POST response: {response.status_code}")
 
+        if response.status_code >= 400:
+            logger.error(f"ERPNext returned an error: {response.status_code} - {response.text}")
+        
         response.raise_for_status()
         return response.json().get("data", {})
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List
 import logging
+import httpx
 from datetime import datetime # Needed for timestamp conversion
 
 from models.erp_schemas import DocTypeListItem, DocTypeSchema, FieldSchema
@@ -42,7 +43,39 @@ async def get_all_doctypes():
     except Exception as e:
         logger.error(f"Unexpected error fetching DocType list: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch DocType list: {e}")
+@router.get("/metadata/doctype/{doctype_name}")
+async def get_doctype_metadata(doctype_name: str):
+    """
+    Fetches DocType metadata from ERPNext and transforms it into simplified schema
+    for frontend dynamic form rendering.
+    """
+    url = f"{settings.ERP_API_URL}/resource/DocType/{doctype_name}"
+    headers = {"Cookie": f"sid={settings.ERP_SID}"}
 
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch DocType metadata")
+
+    data = response.json().get("data")
+    if not data:
+        raise HTTPException(status_code=500, detail="Invalid response from ERP")
+
+    doctype_schema = {
+        "doctype_name": data.get("name"),
+        "last_modified": data.get("modified"),
+        "fields": [
+            {
+                "field_name": field.get("fieldname"),
+                "input_type": field.get("fieldtype")
+            }
+            for field in data.get("fields", [])
+            if field.get("fieldname") and field.get("fieldtype")
+        ]
+    }
+
+    return doctype_schema
 
 @router.get("/doctype/{doctype_name}", response_model=DocTypeSchema, summary="Get the schema (field definitions) for a specific ERPNext DocType")
 async def get_doctype_schema(doctype_name: str):
@@ -92,3 +125,31 @@ async def get_doctype_schema(doctype_name: str):
     except Exception as e:
         logger.error(f"Unexpected error fetching schema for {doctype_name}: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch schema: {e}")
+@router.get("/erp", summary="Check if ERP server is reachable")
+async def check_erp_connectivity():
+    """
+    Checks if the ERPNext server is reachable by attempting to access its base URL.
+    This does not require authentication.
+    """
+    # Construct the base URL from ERP_API_URL by removing the resource part
+    base_erp_url = "https://erp.kisanmitra.net/" # Direct base URL
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Use the base URL for a simple connectivity check
+            response = await client.get(base_erp_url, timeout=5)
+            # We are checking for *any* successful response from the server, even a redirect or login page
+            if response.is_success or response.is_redirect:
+                return {"status": "online", "message": "ERP server is reachable"}
+            else:
+                # If it's not a success or redirect (e.g., 4xx, 5xx other than connection error)
+                return {"status": "offline", "message": f"ERP server returned status {response.status_code}"}
+    except httpx.RequestError as e:
+        # Catch network-related errors specifically
+        logger.error(f"Network error checking ERP connectivity: {e}")
+        return {"status": "offline", "message": f"ERP server is not reachable: {e}"}
+    except Exception as e:
+        # Catch any other unexpected errors
+        logger.error(f"Unexpected error checking ERP connectivity: {e}")
+        return {"status": "offline", "message": f"An unexpected error occurred: {e}"}
+

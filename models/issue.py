@@ -1,26 +1,34 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 
-class IssueEntry(BaseModel):
+class IssueCreate(BaseModel):
     """
-    Pydantic model representing an issue entry in MongoDB.
-    Includes fields for synchronization status with ERPNext.
+    Pydantic model for creating a new issue.
+    Contains only the fields a user should provide.
     """
-    # Unique identifier from ERPNext (if synced)
-    name: Optional[str] = None # 'name' field is ERPNext's primary key for a DocType
-
     subject: str
     raised_by: str
-    status: Optional[str] = None # Made status optional to handle missing data from ERPNext
-    created_at: Optional[datetime] = None # Timestamp of creation in FastAPI
-    synced: bool = False # Flag indicating if the issue has been successfully synced with ERPNext
-    synced_at: Optional[datetime] = None # Timestamp of last successful sync with ERPNext
+    status: str = "Open"
+
+class IssueEntry(IssueCreate):
+    """
+    Pydantic model representing a full issue entry in MongoDB.
+    Includes both user-provided fields and server-generated sync/ID fields.
+    """
+    id: Optional[str] = Field(alias="_id", default=None)
+    name: Optional[str] = None # This is the ID from ERPNext, e.g., 'KM-19444'
+    created_at: Optional[datetime] = None
+    synced: bool = False
+    synced_at: Optional[datetime] = None
 
     class Config:
-        # Allows Pydantic to handle non-dict inputs, e.g., MongoDB ObjectId
-        arbitrary_types_allowed = True
-        # Aliases for field names (e.g., '_id' in MongoDB to 'id' in Pydantic)
-        json_encoders = {datetime: lambda dt: dt.isoformat()} # Ensure datetime is ISO formatted
-        # Allow population by field name or alias for MongoDB compatibility
+        """
+        Pydantic model configuration.
+        - `populate_by_name`: Allows creating the model using either field name or alias (e.g., 'id' or '_id').
+        - `arbitrary_types_allowed`: Allows handling types like MongoDB's ObjectId.
+        - `json_encoders`: Ensures datetime objects are converted to ISO 8601 string format in JSON.
+        """
         populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {datetime: lambda dt: dt.isoformat()}
